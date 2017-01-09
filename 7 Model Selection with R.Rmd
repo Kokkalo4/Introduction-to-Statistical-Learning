@@ -1,0 +1,203 @@
+
+Model Selection
+================
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring web pages, and a very nice way of 
+distributing an analysis. It has some very simple syntax rules.
+
+```{r}
+library(ISLR)
+summary(Hitters)
+```
+
+There are some missing values here, so before we proceed we will remove them:
+
+```{r}
+Hitters <- na.omit(Hitters)
+with(Hitters, sum(is.na(Salary)))
+```
+
+
+Best Subset Regression
+======================
+We will now use the package `leaps` to evaluate all the best-subset models.
+Note: Best subset regression looks through all possible regression models of all possible subset sizes and looks for the 
+best of each size. And so produces a sequence of models which is the best subset for each particular size. 
+To do the best subset selection for our model we use the package `leaps` which has a function `regsubsets` which does the best subset selection for us. 
+With summary we get an output that summarizes the best subset models for us. What summary does is for each subset size, so for example for subset size 1(which is first row) it puts a star next to the variable that's in the best subset of size 1(in our case CRBI). And then on the best subset of size 2(which is 2nd row), there's going to be 2 stars(on our case CRBI and HITS), and the same goes for 3 and so on.
+
+```{r}
+library(leaps)
+regfit.full <- regsubsets(Salary ~ ., data = Hitters)
+summary(regfit.full)
+```
+
+
+By default `regsubsets` gives best-subsets up to the size of 8. We can configure it though manually to give more. 
+For example, let's increase it to 19. i.e. all the variables.
+names(reg.summary) gives us an idea of what's inside the summary function. It contains various things, like for each of the models, the best subset models, it has r squared, the residual sum of squared, the adjusted R squared, the Cp statistic, the BIC statistic and a few other things. All the things that we're going to use to select the best subset model.
+Next we're going to make a plot of Cp which is an estimate of the prediction error. This plot is to help us choose the model with the lowest Cp. Which in this case, the model with 10 variables is the smallest.
+The model with the lowest Cp can also be found with the function `which.min(reg.summary$cp)`
+And finally we annotate the point we have chosen with points function as described below
+
+```{r}
+regfit.full <- regsubsets(Salary ~ ., data = Hitters, nvmax = 19)
+reg.summary <- summary(regfit.full)
+names(reg.summary)
+plot(reg.summary$cp , xlab = "Number of variables" , ylab = "Cp")
+which.min(reg.summary$cp)
+points(10, reg.summary$cp[10],pch = 20, col = "red")
+```
+
+There is a plot methode for `regsubsets` object
+The output is like a patent picture, what it shows is on the y axis is the Cp statistic(as we said above small Cp is good so on our case the first from the top is the better -- This will correspond to our model of size 10), and then the Cp is getting worse and worse. and then for each unique value of Cp, black squares are ones that indicate the variable that is in and the white squares indicate that the variables are out.
+What you notice from this plot above is that near the bottom of the Cp is the models that are reasonably stable(meaning the same variables are chosen almost), also another assumption made from the plot is that bad Cps corresponded to models that had all the variables in or ones that had hardly any variables in. The plot below gives a quick summary of all the models as opposed to seeing the Cp statistic.
+And finally, after having chosen model 10 as a coefficient method for regsubsets, and we ask it for the coefficients for the model indexed 10. And the output is a coefficient vector, that gives you the coefficients of those 10 variables that are in the model.
+```{r}
+plot(regfit.full, scale = "Cp")
+coef(regfit.full, 10)
+```
+
+
+
+Forward Stepwise Selection
+==========================
+Here we use the `regsubsets` function but specify the `method = "forward"` option:
+Forward Stepwise selection does the same as best-subset selection, but each time it adds the next best possible variable, and it produces a nested sequence. So it's a much less adventurous search and It keeps a nested sequence of models each time you just add the variable that improves the set the most. 
+If we look at the summary output of `regfit.fwd` we can see that it keeps all variables from previous selection and it adds one that is the next best variable.
+The plot function below looks pretty much like the one we plotted above, and also the same rules apply here as they applied on the plot above.
+
+```{r}
+regfit.fwd <- regsubsets(Salary ~ . , data = Hitters, nvmax = 19, method = "forward")
+summary(regfit.fwd)
+plot(regfit.fwd, scale = "Cp")
+```
+
+
+Model Selection using a validation set
+======================================
+Let's make a training and a validation set, so that we can choose a good subset model.
+We will do it by using a slightly different approach by what was done in the book.
+In this case, we check the dimensions of the data frame Hitters, we pick a sample of approximately 2/3 of our data to use as train using the sample command, and everything else is as before apart from the fact that we now use the train data to create the `regsubsets`.
+```{r}
+dim(Hitters)
+set.seed(1)
+train <- sample(seq(263), 180 , replace = FALSE)
+train
+regfit.fwd <- regsubsets(Salary ~ ., data = Hitters[train,] , nvmax = 19 , method = "forward")
+```
+
+Now we will make predictions on the observations not used for training. We knowe there are 19 models, so we set up some vectors to record the errors. We have to do a bit of work here, because there is no predict method for `regsubsets`.
+
+First we are going to work out the validation errors on the remainder of the data. We know there's 19 subset models because there are 19 variables and we'll set up a vector with 19 slots
+And then we'll make a x matrix corresponding to our validation data set. Here we use a model matrix because we want to use the formula that we used in building the model, which was `Salary ~ .`. We give that formula as an augment to the model matrix and we tell it that the data it should use is `Hitters[-train,]`.
+
+Next we are going to make our predictions for each of the models.
+So we go in a loop for i equals 1 to 19.
+We use the coef function to extract the coefficients for the model of size id equals i, so i is going to index the size, and we're going to loop it and do it for each size. 
+Next we get the subsets of columns of x test that corresponds to the variables that are in this current coefficient vector and then we do a matrix multiplied by the coefficient vector.
+And then after having gotten the prediction, we compute the MSE(mean squared error), which also ends our for loop.
+```{r}
+val.errors <- rep(NA, 19)
+x.test <- model.matrix(Salary ~ . , data = Hitters[-train,]) #notice the -train index HERE
+for(i in 1:19){
+  coefi <- coef(regfit.fwd, id = i)
+  pred <- x.test[,names(coefi)]%*%coefi
+  val.errors[i] <- mean((Hitters$Salary[-train]-pred)^2)
+}
+plot(sqrt(val.errors), ylab = "root MSE" , ylim = c(300,400), pch = 19 , type = "b")
+points(sqrt(regfit.fwd$rss[-1]/180), col = "blue" , pch = 19 , type = "b")
+legend("topright", legend = c("Training","Validation"), col = c("blue","black"), pch = 19)
+```
+As expected from the plot above the training error goes down monotonically as the model gets bigger, but not so for the validation error.
+
+This was a little tedious not having a predict method for regsubsets so we will write one!
+```{r}
+predict.regsubsets <- function(object, newdata, id, ...){
+  form <- as.formula(object$call[[2]])
+  mat <- model.matrix(form,newdata)
+  coefi <- coef(object , id = id)
+  mat[,names(coefi)]%*%coefi
+}
+```
+
+
+
+
+Model Selection by Cross Validation 
+===================================
+
+We will do 10 fold cross-validation. It's really easy.
+STEPS:
+1. set random seed
+2. we sample from the numbers 1 to 10. Each observation is going to be assigned a fold number and there are 10 folds. So we create a vector 1 to 10 of the length the number of rows of Hitters. So this will try to make an equal number of ones, equal number of twos , up to equal number of 10s. And then we're going to shuffle that(this is what the sample command does here).
+3. Then we print our random assignment by calling `folds`.
+4. Then we tabulate folds, and we can see that the folds are balanced and there are either 26 or 27 observations in each fold.
+5. We make a matrix for our errors, that is going to have 10 rows and 19 columns, because there are 19 variables, there are going to be 19 subsets and 10 rows for each of the 10 folds.
+6. Next, we are going to go through a double for loop. In the first for loop we fit a `regsubsets` model which will be repeated for all 10 folds. The training data for the `regsubsets` is going to be all the observations whose fold id is not equal to k. For this k-fold we are going to train on all the observations but those on the k-fold.
+In the next loop, where i equals 1 to 19, we use the predict method we made, and we're going to make predictions on those observations whose fold id is equal to k(those were left out above). And this is done for each subset size i, which is given to our predict function by id. 
+Finally after making the prediction we compute the mean squared error of the predictions, and assign that to the kth row of our cv.errors, and we do that for all i and for all k.
+7. Then we calculate the RMSE(root mean squared error) for all 10 folds.
+The errors are computed over the full training set. done fold by fold and then is averaged.
+8. We plot the RMSE for each of the folds, which seems to favor models of size 11 to 12.
+```{r}
+set.seed(11)
+folds <- sample(rep(1:10,length = nrow(Hitters)))
+folds
+table(folds)
+cv.errors <- matrix(NA,10,19)
+for(k in 1:10){
+  best.fit <- regsubsets(Salary ~ . , data = Hitters[folds != k,] , nvmax = 19 , method = "forward")
+  for(i in 1:19){
+    pred <- predict(best.fit, Hitters[folds == k,], id = i)
+    cv.errors[k,i] <- mean((Hitters$Salary[folds == k] - pred)^2)
+  }
+}
+rmse.cv <- sqrt(apply(cv.errors,2,mean))
+plot(rmse.cv, pch = 19 , type = "b")
+```
+
+
+Ridge Regression and the Lasso
+===============================
+
+We will use the package `glmnet`, which does not use the model formula language, so we will set up an "x" and "y".
+```{r}
+library(glmnet)
+x <- model.matrix(Salary ~ ., -1 , data = Hitters)
+y <- Hitters$Salary
+```
+
+First we will fit a Ridge Regression model. This is achieved by calling `glmnet` with `alpha=0`(alpha = 1 is lasso and alpha = 0 is ridge regression, for alpha between 0 and 1 you get elastic net models which is between ridge and lasso.). There is also a `cv.glmnet` function which will do the cross-validation for us.
+```{r}
+fit.ridge <- glmnet(x,y,alpha = 0)
+plot(fit.ridge, xvar = "lambda", label = TRUE)
+cv.ridge <- cv.glmnet(x,y,alpha = 0)
+plot(cv.ridge)
+```
+Now we fit a lasso model. For this we use the default `alpha = 1`.
+```{r}
+fit.lasso <- glmnet(x,y,alpha = 1)
+plot(fit.lasso, xvar = "lambda", label = TRUE)
+cv.lasso <- cv.glmnet(x,y)
+plot(cv.lasso)
+coef(cv.lasso)
+```
+
+Suppose we want to use our earlier training/validation division to select the `lambda` and the lasso.
+This is easy to do.
+```{r}
+lasso.tr <- glmnet(x[train,],y[train])
+lasso.tr
+pred <- predict(lasso.tr, x[-train,])
+dim(pred)
+rmse <- sqrt(apply((y[-train]-pred)^2,2,mean))
+plot(log(lasso.tr$lambda),rmse, type = "b", xlab = "Log(lambda)")
+lam.best <- lasso.tr$lambda[order(rmse)[1]]
+lam.best
+coef(lasso.tr, s = lam.best)
+```
+
+
+
+

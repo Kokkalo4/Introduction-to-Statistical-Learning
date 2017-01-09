@@ -1,0 +1,75 @@
+Support Vector Machines
+========================
+
+To demonstrate the SVM, it is easiest to work on low dimensions, so we can see the data. 
+
+Linear SVM Classifier
+--------------------
+
+Lets generate some data in two dimensions, and make them a little separated.
+
+```{r}
+set.seed(10011)
+x <- matrix(rnorm(40),20,2) #make a matrix x that has 40 numbers in 20 rows and 2 columns.
+y <- rep(c(-1,1),c(10,10)) 
+x[y = 1,] = x[y = 1,] + 1
+plot(x, col = y + 3, pch = 19)
+```
+Now we will load the package `e1071` which contains the `svm` function we will use. We then compute the fit. Notice that we have to specify a `cost` parameter, which is a tuning parameter.
+
+```{r}
+library(e1071)
+dat <- data.frame(x, y = as.factor(y))
+svmfit <- svm(y ~ . , data = dat , kernel = "linear", cost = 10, scale = FALSE)
+print(svmfit)
+plot(svmfit,dat)
+```
+
+As mentioned in the chapter the plot function is somewhat crude, and plots X2 on the horizontal axis(unlike what R would do automatically for a matrix). Lets see how we might make our own plot. 
+
+The first thing we will do is make a grid for values X1 and X2. We will write a function to do that in case we want to reuse it. It uses the handy function `expand.grid` and produces the coordinates of `n*n` points on a lattice covering the domain of `x`. Having made the lattice, we make a prediction at each point on the lattice. We then plot the lattice, color coded according to the classification. Now we can see the decision boundary. 
+
+The support points(points on the margin, or on the wrong side of the margin) are indexed in the `$index` component of the fit.
+
+```{r}
+make.grid <- function(x, n = 75){
+  grange = apply(x,2,range)
+  x1 = seq(from = grange[1,1] , to = grange[2,1], length = n)
+  x2 = seq(from = grange[1,2] , to = grange[2,2], length = n)
+  expand.grid(X1 = x1 , X2 = x2)
+}
+xgrid <- make.grid(x)
+ygrid <- predict(svmfit,xgrid)
+plot(xgrid,col = c("red","blue")[as.numeric(ygrid)], pch = 20, cex = .2)
+points(x, col = y + 3, pch = 19)
+points(x[svmfit$index,],pch = 5, cex = 2)
+```
+
+The `svm` function is not too friendly, in that we have to do some work to get back the linear coefficients, as described in the text. Probably the reason is that this only makes sense for linear kernels, and the function is more general. Here we will use a formula to extract the coefficients; for those interested in where this comes from have a look in Chapter 12 of Elements of Statistical Learning.
+
+We extract the linear coefficients and then using simple algebra, we include the decision boundary and the two margins.
+
+```{r}
+beta <- drop(t(svmfit$coefs)%*%x[svmfit$index,])
+beta0 <- svmfit$rho
+plot(xgrid,col = c("red","blue")[as.numeric(ygrid)], pch = 20, cex = .2)
+points(x, col = y + 3, pch = 19)
+points(x[svmfit$index,],pch = 5, cex = 2)
+abline(beta0/beta[2],-beta[1]/beta[2])
+abline((beta0 - 1)/beta[2], -beta[1]/beta[2], lty = 2)
+abline((beta0 + 1)/beta[2], -beta[1]/beta[2], lty = 2)
+```
+
+
+NonLinear SVM
+--------------
+
+Instead, we will run the SVM on some data where a non-linear boundary is called for. We will use the mixture data from ESL
+
+```{r}
+load(url("http://www.stat.stanford.edu/~tibs/ElemStatLearn/datasets/ESL.mixture.rda"))
+names(ESL.mixture)
+rm(x,y)
+attach(ESL.mixture)
+```
+

@@ -1,0 +1,146 @@
+Non-Linear Models
+==================
+Here we explore the use of nonlinear models using some tools in R.
+
+```{r}
+require(ISLR)
+attach(Wage)
+```
+
+
+Polynomials.
+============
+First we are going to use polynomials and focus on a single predictor age:
+We are going to fit a 4th degree polynomial. Poly is the function for polynomial which takes up an input(age on this case) and 4 is the degree, which makes up a matrix that the lm() function then fits the model, with response to be wage.
+```{r}
+fit <- lm(wage ~ poly(age,4),data = Wage)
+summary(fit)
+```
+Then we do a summary of the fit and in summary we can see that we get the usual kind of summary we get from a summary function called on lm() models. The summary shows us the residuals and the coefficients. In this case we see that the residuals are all called `poly(age,4)` and then 1,2,3 and 4, which is for degree 1,2,3 and 4 respectively(the different degree monomyals). Also, what we see is that the first 2 are very significant, the cubic is significant and the quartic is barely non significant. This tells us that a cubic polonomyal would be sufficient.
+
+The `poly()` function generates a basis of *orthogonal polynomials*. 
+Lets make a plot of the fitted function, along with the standard errors of the fit.
+
+```{r fig.width = 7 , fig.height= 6}
+agelims <- range(age) #get the range of age. This also returns a vector of length 2 with the minimum and the maximum.
+age.grid <- seq(from = agelims[1], to = agelims[2]) #next we me a grid of values of age. NOTE: agelims[1] is minimum age and agelim[2] is the maximum age. Seq() will make a sequence of numbers incrementing by one at a time, unless specified otherwise.
+preds <- predict(fit, newdata = list(age = age.grid), se = TRUE) #This function makes the predictions. We'll predict from fit and then we will tell it that the new data is the age.grid we created above. Also, we tell the predict function that we want standard errors and we set se to TRUE.
+se.bands <- cbind(preds$fit + 2*preds$se, preds$fit - 2*preds$se) #The preds we created with the predict function above will be a list with two components, one will be fit and one will be se.fit. So new we are going to make the standard error bands, as we are going to make a plot with a fitted function and plus or minus 2 standard error bands. 
+#So here we make the standard error bands. To do so we are going to make a matrix with 2 columns, and to do so we call the function cbind to bind together our columns. The first one will be preds$fit, which is the fitted function plus 2 times the standard error and the second column will be again preds$fit minus two times the standard error. And so this gives us the standard error bands.
+plot(age,wage,col = "darkgrey") #Now we make our plot.
+lines(age.grid,preds$fit, lwd = 2, col = "blue") #Next we use the lines function to plot against the age.grid, the predicted function, which we make blue.
+matlines(age.grid,se.bands, col = "blue", lty = 2) #Matlines function now plots simultaneously age.grid and se.bands. 
+```
+
+There are other more direct ways to do this in R. For example: 
+In this case we are going to fit the polynomial directly, by specifying age squared, age cubed and age the fourth.
+```{r}
+fita <- lm(wage ~ age + I(age^2) + I(age^3) + I(age^4), data = Wage)
+summary(fita) #from the summary we see that the coefficients and the p values look different than what we saw in the above summary. That's because we are using a different basis for representing the polynomial. 
+``` 
+
+Here I() is a *wrapper* function, we need it because `age^2` means something to the formula language, while `I(age^2)` is protected. 
+The coefficients are different to those we got before! However the fits are the same:
+
+```{r}
+plot(fitted(fit),fitted(fita))
+```
+By using orthogonal polynomials in this simple way, it turns out that we can separately test for each coefficient. So if we look at the summary again, we can see that the linear, quadratic and cubic terms are significant, but not the quartic.
+
+```{r}
+summary(fit)
+```
+
+This only works with linear regression, and if there is a single predictor. In general, we would use `anova()` as the next example demonstrates.
+
+```{r}
+fita <- lm(wage ~ education , data = Wage) #Linear model 
+fitb <- lm(wage ~ education + age, data = Wage) #Multiple Linear model
+fitc <- lm(wage ~ education + age + poly(age,2), data = Wage) #Linear model with a polynomial of degree 2 in age.
+fitd <- lm(wage ~ education + age + poly(age,3), data = Wage) #Linear model with a polynomial of degree 3 in age.
+anova(fita,fitb,fitc,fitd) #Then we use the anova function to sort out which ones of the models above we need.
+```
+The output of the above ANOVA() tells us that certainly is needed in the model with education, also age squared is certainly needed as well as age in the model, but age cubed is not necessarily needed in the model(its not quite significant).
+Using ANOVA() like we used it above to test nested sequences, is the right way to go in general. 
+
+
+### Polynomial Logistic Regression.
+
+Now we fit a logistic regression model to a binary response variable, constructed from `wage`. We code the big earners(`> 250`) as 1, else 0. 
+
+```{r}
+fit <- glm(I(wage > 250) ~ poly(age,3) ,data = Wage , family = "binomial")
+summary(fit)
+preds <- predict(fit, list(age = age.grid), se = T)
+se.bands <- preds$fit + cbind(fit = 0, lower = -2*preds$se , upper = 2*preds$se)
+se.bands[1:5,]
+```
+
+We have done the computations on the logit scale. To transform we need to apply the inverse logit mapping
+$$p=\frac{e^\eta}{1+e^\eta}.$$
+(Here we have used the Markdown ability to interpret Tex expressions)
+
+We can do this simultaneously, for all three columns of `se.bands`: 
+```{r}
+prop.bands <- exp(se.bands)/(1+exp(se.bands))
+matplot(age.grid, prop.bands, col = "blue", lwd = c(2,1,1), lty = c(1,2,2), type = "l", ylim = c(0,1))
+points(jitter(age),I(wage>250)/10,pch = "|",cex = .5)
+```
+
+Splines
+========
+
+Splines are more flexible than polynomials, but the idea is rather similar.
+Here we will explore cubic splines.
+
+```{r}
+require(splines)
+fit <- lm(wage ~ bs(age,knots = c(25,40,60)), data = Wage)
+plot(age,wage,col = "darkgrey")
+lines(age.grid,predict(fit,list(age = age.grid)), col = "darkgreen", lwd = 2)
+abline(v = c(25,40,60), lty = 2, col = "darkgreen")
+```
+The smoothing lines does not require know selection, but it does have a smoothing parameter, which can conveniently be specified via the effective degrees of freedom or `df`.
+
+```{r}
+fit <- smooth.spline(age,wage,df = 16)
+lines(fit, col = "red", lwd = 2)
+```
+or we can use LOO cross-validation to select the smoothing parameter for us automatically:
+
+```{r}
+fit <- smooth.spline(age,wage, cv = TRUE)
+lines(fit, col = "purple", lwd = 2)
+fit
+```
+
+
+Generalized Additive Models
+============================
+
+So far we have focused on fitting models with mostly single nonlinear terms. 
+The `gam` package makes it easier to work with multiple nonlinear terms. In addition it knows how to plot these functions and their standard errors. 
+
+```{r}
+require(gam)
+gam1 <- gam(wage ~ s(age,df = 4) + s(year, df = 4) + education, data = Wage)
+par(mfrow = c(1,3))
+plot(gam1, se = T)
+gam2 <- gam(I(wage>250) ~ s(age,df = 4) + s(year, df = 4) + education, data = Wage, family = "binomial")
+plot(gam2)
+```
+Lets see if we need a nonlinear terms for the year
+
+```{r}
+gam2a <- gam(I(wage>250) ~ s(age,df = 4) + year + education, data = Wage, family = "binomial")
+anova(gam2a,gam2, test = "Chisq")
+```
+
+One nice feature of `gam` package is that it knows how to plot the functions nicely, even for models fit by `lm` or `glm`.
+
+```{r fig.width= 10, fig.height= 5}
+par(mfrow= c(1,3))
+lm1 <- lm(wage ~ ns(age,df = 4) + ns(year,df = 4) + education, data = Wage)
+plot.gam(lm1, se = T)
+```
+
